@@ -82,51 +82,46 @@ class QiniuFile_Plugin implements Typecho_Plugin_Interface
     // 上传文件
     public static function uploadFile($file, $content = null)
     {
-
         // 获取上传文件
         if (empty($file['name'])) return false;
 
         // 校验扩展名
         $part = explode('.', $file['name']);
-        $ext = (($length = count($part)) > 1) ? strtolower($part[$length-1]) : '';
+        $ext = (($length = count($part)) > 1) ? strtolower($part[$length - 1]) : '';
         if (!Widget_Upload::checkFileType($ext)) return false;
 
         // 获取插件配置
         $option = self::getConfig();
-        $date = new Typecho_Date(Typecho_Widget::widget('Widget_Options')->gmtTime);
-
-        // 保存位置
-        // $savepath = preg_replace(array('/\{year\}/', '/\{month\}/', '/\{day\}/'), array($date->year, $date->month, $date->day), $option->savepath);
-        // $savename = $savepath . sprintf('%u', crc32(uniqid())) . '.' . $ext;
-        // if (isset($content))
-        // {
-        //     $savename = $content['attachment']->path;
-        //     self::deleteFile($savename);
-        // }
-
-        // 上传文件
-        $filename = $file['tmp_name'];
-        if (!isset($filename)) return false;
 
         $upManager = new Qiniu\Storage\UploadManager();
         $auth = new Qiniu\Auth($option->accesskey, $option->sercetkey);
         $token = $auth->uploadToken($option->bucket);
-        list($ret, $error) = $upManager->putFile($token, $option->savepath . $file['name'], $filename);
 
-        if ($error == null)
-        {
-            return array
-            (
-                'name'  =>  $file['name'],
-                'path'  =>  $option->savepath . $file['name'].( $option->imgstyle == '' ? '' : '-'.$option->imgstyle ),
-                'size'  =>  $file['size'],
-                'type'  =>  $ext,
-                'mime'  =>  Typecho_Common::mimeContentType($filename)
-            );
+        if (isset($file['bytes'])) {
+            list($ret, $error) = $upManager->put($token, $option->savepath . $file['name'], $file['bytes']);
+            $mime = $file['mime'];
+        } else {
+            try {
+                $filename = $file['tmp_name'];
+                list($ret, $error) = $upManager->putFile($token, $option->savepath . $file['name'], $filename);
+                $mime = Typecho_Common::mimeContentType($filename);
+            } catch (Exception $e) {
+                return false;
+            }
         }
-        else return false;
-    }
 
+        if ($error == null) {
+            return array(
+                'name' => $file['name'],
+                'path' => $option->savepath . $file['name'] . ($option->imgstyle == '' ? '' : '-' . $option->imgstyle),
+                'size' => $file['size'],
+                'type' => $ext,
+                'mime' => $mime
+            );
+        } else {
+            return false;
+        }
+    }
 
     // 上传文件处理函数
     public static function uploadHandle($file)
